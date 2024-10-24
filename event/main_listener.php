@@ -47,43 +47,49 @@ class main_listener implements EventSubscriberInterface
         // Decide if we need to do anything at all
         $dimension = @getimagesize($event['filedata']['filename']);
 
-        if ($dimension === false) 
-        {
+        if ($dimension === false) {
             return false;
         }
 
         list($width, $height, $type) = $dimension;
 
-        if (empty($width) || empty($height)) 
-        {
+        if (empty($width) || empty($height)) {
             return false;
         }
 
         $max_width = $this->config['avatar_max_width'];
         $max_height = $this->config['avatar_max_height'];
 
+        $min_width = $this->config['avatar_min_width'];
+        $min_height = $this->config['avatar_min_height'];
+
         if (($width > $max_width) || ($height > $max_height)) {
             // Keep proportions
-            if ($width > $height) 
-            {
+            if ($width > $height) {
                 $new_height = round($height * ($max_width / $width));
                 $new_width = $max_width;
-            } 
-            else 
-            {
+            } else {
                 $new_height = $max_height;
                 $new_width = round($width * ($max_height / $height));
             }
 
             $data = $this->do_resize($event['filedata'], $type, $new_width, $new_height, $width, $height);
-        } 
-        else 
-        {
+        } else if (($width < $min_width) || ($height < $min_height)) {
+            // Keep proportions
+            if ($width > $height) {
+                $new_height = round($height * ($min_width / $width));
+                $new_width = $min_width;
+            } else {
+                $new_height = $min_height;
+                $new_width = round($width * ($min_height / $height));
+            }
+
+            $data = $this->do_resize($event['filedata'], $type, $new_width, $new_height, $width, $height);
+        } else {
             // Nothing to do
             return false;
         }
-        if ($data !== false) 
-        {
+        if ($data !== false) {
 
             $upload_ary = array(
                 'tmp_name' => $data['destination'],
@@ -110,39 +116,31 @@ class main_listener implements EventSubscriberInterface
         $used_imagick = false;
         $destination = $filedata['filename'] . '_resized';
         // Only use ImageMagick if defined and the passthru function not disabled
-        if ($this->config['img_imagick'] && function_exists('passthru')) 
-        {
-            if (substr($this->config['img_imagick'], -1) !== '/') 
-            {
+        if ($this->config['img_imagick'] && function_exists('passthru')) {
+            if (substr($this->config['img_imagick'], -1) !== '/') {
                 $this->config['img_imagick'] .= '/';
             }
 
             @passthru(escapeshellcmd($this->config['img_imagick']) . 'convert' . ((defined('PHP_OS') && preg_match('#^win#i', PHP_OS)) ? '.exe' : '') . ' -quality 85 -geometry ' . $new_width . 'x' . $new_height . ' "' . str_replace('\\', '/', $filedata['filename']) . '" "' . str_replace('\\', '/', $destination) . '"');
 
-            if (file_exists($destination)) 
-            {
+            if (file_exists($destination)) {
                 $used_imagick = true;
             }
         }
 
-        if (!$used_imagick) 
-        {
-            if (!function_exists('get_supported_image_types')) 
-            {
+        if (!$used_imagick) {
+            if (!function_exists('get_supported_image_types')) {
                 include_once($this->phpbb_root_path . 'includes/functions_posting.' . $this->php_ext);
             }
             $type = get_supported_image_types($type);
 
-            if ($type['gd']) 
-            {
+            if ($type['gd']) {
                 // If the type is not supported, we are not able to create a thumbnail
-                if ($type['format'] === false) 
-                {
+                if ($type['format'] === false) {
                     return false;
                 }
 
-                switch ($type['format']) 
-                {
+                switch ($type['format']) {
                     case IMG_GIF:
                         $image = @imagecreatefromgif($filedata['filename']);
                         break;
@@ -161,28 +159,22 @@ class main_listener implements EventSubscriberInterface
                         break;
                 }
 
-                if (empty($image)) 
-                {
+                if (empty($image)) {
                     return false;
                 }
 
-                if ($type['version'] == 1) 
-                {
+                if ($type['version'] == 1) {
                     $new_image = imagecreate($new_width, $new_height);
 
-                    if ($new_image === false) 
-                    {
+                    if ($new_image === false) {
                         return false;
                     }
 
                     imagecopyresized($new_image, $image, 0, 0, 0, 0, $new_width, $new_height, $orig_width, $orig_height);
-                } 
-                else 
-                {
+                } else {
                     $new_image = imagecreatetruecolor($new_width, $new_height);
 
-                    if ($new_image === false) 
-                    {
+                    if ($new_image === false) {
                         return false;
                     }
 
@@ -193,13 +185,11 @@ class main_listener implements EventSubscriberInterface
                 }
 
                 // If we are in safe mode create the destination file prior to using the gd functions to circumvent a PHP bug
-                if (@ini_get('safe_mode') || @strtolower(ini_get('safe_mode')) == 'on') 
-                {
+                if (@ini_get('safe_mode') || @strtolower(ini_get('safe_mode')) == 'on') {
                     @touch($destination);
                 }
 
-                switch ($type['format']) 
-                {
+                switch ($type['format']) {
                     case IMG_GIF:
                         imagegif($new_image, $destination);
                         break;
@@ -217,15 +207,12 @@ class main_listener implements EventSubscriberInterface
                         break;
                 }
                 imagedestroy($new_image);
-            } 
-            else 
-            {
+            } else {
                 return false;
             }
         }
 
-        if (!file_exists($destination)) 
-        {
+        if (!file_exists($destination)) {
             return false;
         }
 
